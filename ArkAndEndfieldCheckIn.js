@@ -96,7 +96,6 @@ function performCheckIn() {
     for (const gameRole of endfieldRoles) {
         Logger.log("Endfield role: " + gameRole);
         const response = sendEndfieldAttendanceRequest(cred, signToken, gameRole);
-        Logger.log("Endfield Response: " + JSON.stringify(response));
         handleResponse("Endfield", gameRole, response);
     }
 
@@ -104,7 +103,6 @@ function performCheckIn() {
     for (const uid of arkUids) {
         Logger.log("Arknights uid: " + uid);
         const response = sendArkAttendanceRequest(cred, signToken, uid);
-        Logger.log("Arknights Response: " + JSON.stringify(response));
         handleResponse("Arknights", uid, response);
     }
 }
@@ -170,6 +168,7 @@ function sendDiscordWebhook(title, description, footer, color) {
 
 function parseRewards(data) {
     if (!data) return "Unknown";
+    // Endfield format
     if (data.reward) return `${data.reward.name} x${data.reward.count}`;
     if (data.awardIds && data.resourceInfoMap) {
         let list = [];
@@ -181,6 +180,13 @@ function parseRewards(data) {
             }
         }
         return list.join(", ");
+    }
+    // Arknights format: latest record in records[0]
+    if (data.records && data.records.length > 0 && data.resourceInfoMap) {
+        const latest = data.records[0];
+        const info = data.resourceInfoMap[latest.resourceId];
+        const name = info ? info.name : latest.resourceId;
+        return `${name} x${latest.count}`;
     }
     return "No rewards data found";
 }
@@ -220,7 +226,6 @@ function getPlayerBinding(cred, signToken) {
     const options = { method: 'get', headers: headers, muteHttpExceptions: true };
     const response = UrlFetchApp.fetch(CONSTANTS.URLS.BINDING, options);
     const json = JSON.parse(response.getContentText());
-
     let endfieldRoles = [];
     let arkUids = [];
 
@@ -234,9 +239,8 @@ function getPlayerBinding(cred, signToken) {
                 }
             }
             if (apps[i].appCode === "arknights" && apps[i].bindingList) {
-                const binding = apps[i].bindingList[0];
-                for (const role of binding.roles) {
-                    arkUids.push(role.roleId);
+                for (const binding of apps[i].bindingList) {
+                    if (binding.uid) arkUids.push(binding.uid);
                 }
             }
         }
@@ -267,11 +271,29 @@ function sendEndfieldAttendanceRequest(cred, signToken, gameRole) {
 }
 
 function sendArkAttendanceRequest(cred, signToken, uid) {
-    return sendAttendance(cred, signToken, {
+    const signInResponse = sendAttendance(cred, signToken, {
         path: "/api/v1/game/attendance",
         url: CONSTANTS.URLS.ARK_ATTENDANCE,
-        body: { uid: uid }
+        body: { uid: Number(uid) }
     });
+    if (signInResponse.code !== 0) return signInResponse;
+
+    // Fetch reward info via GET
+    const timestamp = Math.floor(Date.now() / 1000).toString();
+    const path = "/api/v1/game/attendance";
+    const params = `gameId=${CONSTANTS.ARK_GAME_ID}&uid=${uid}`;
+    const signature = computeSign(path, params, timestamp, signToken);
+    const headers = {
+        "cred": signInResponse._cred || cred,
+        "platform": CONSTANTS.PLATFORM, "vname": CONSTANTS.VNAME,
+        "timestamp": timestamp, "sk-language": "zh_Hant", "sign": signature
+    };
+    const queryResponse = UrlFetchApp.fetch(
+        `${CONSTANTS.URLS.ARK_ATTENDANCE}?${params}`,
+        { method: 'get', headers: headers, muteHttpExceptions: true }
+    );
+    const queryJson = JSON.parse(queryResponse.getContentText());
+    return { code: 0, data: queryJson.data };
 }
 
 // --- CRYPTO LOGIC ---
