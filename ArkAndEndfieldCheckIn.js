@@ -140,7 +140,7 @@ function sendDiscordWebhook(title, description, footer, color) {
 
     const payload = {
         username: "SKPORT Assistant",
-        avatar_url: "https://static.skport.com/asset/game/endfield_740c9ea5dd44bf4a3e6932c595e30a26.png",
+        avatar_url: "https://assets.skport.com/assets/favicon.ico",
         embeds: [{
             title: title,
             description: description,
