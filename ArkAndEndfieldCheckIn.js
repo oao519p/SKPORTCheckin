@@ -274,7 +274,7 @@ function sendArkAttendanceRequest(cred, signToken, uid) {
     const signInResponse = sendAttendance(cred, signToken, {
         path: "/api/v1/game/attendance",
         url: CONSTANTS.URLS.ARK_ATTENDANCE,
-        body: { uid: Number(uid) }
+        body: { uid: String(uid) }
     });
     if (signInResponse.code !== 0) return signInResponse;
 
