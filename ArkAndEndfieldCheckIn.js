@@ -73,7 +73,7 @@ function main() {
         performCheckIn();
     } catch (e) {
         Logger.log("CRITICAL ERROR: " + e.toString());
-        sendDiscordWebhook("Script Error", e.toString(), "", 15548997);
+        sendDiscordWebhook([{ title: "Script Error", description: e.toString(), color: 15548997, timestamp: new Date().toISOString() }]);
     }
 }
 
@@ -91,77 +91,102 @@ function performCheckIn() {
     if (!signToken) throw new Error("Failed to get Sign Token");
 
     const { endfieldRoles, arkUids } = getPlayerBinding(cred, signToken);
+    const results = [];
 
     // 2. Endfield Attendance
     for (const gameRole of endfieldRoles) {
         Logger.log("Endfield role: " + gameRole);
         const response = sendEndfieldAttendanceRequest(cred, signToken, gameRole);
-        handleResponse("Endfield", gameRole, response);
+        results.push(buildResult("Endfield", gameRole, response));
     }
 
     // 3. Arknights Attendance
     for (const uid of arkUids) {
         Logger.log("Arknights uid: " + uid);
         const response = sendArkAttendanceRequest(cred, signToken, uid);
-        handleResponse("Arknights", uid, response);
+        results.push(buildResult("Arknights", uid, response));
     }
+
+    sendSummaryWebhook(results);
 }
 
 // --- RESULT HANDLER ---
 
-function handleResponse(gameName, roleId, json) {
+function buildResult(gameName, roleId, json) {
     const code = json.code;
     const msg = json.message || "";
 
     if (code === 0) {
         const rewards = parseRewards(json.data);
-        const desc = `**Status:** Signed in successfully!\n**Rewards:** ${rewards}`;
         Logger.log(`[${gameName}] Success: ` + rewards);
-        sendDiscordWebhook(`${gameName} Attendance Success`, desc, roleId, 5763719);
+        return { game: gameName, roleId: roleId, status: "success", text: `✅ Signed in!\n**Rewards:** ${rewards}` };
     }
     else if (code === 1001 || code === 10001 || msg.toLowerCase().includes("already")) {
         Logger.log(`[${gameName}] Already signed in today.`);
-        sendDiscordWebhook(`${gameName} Attendance Info`, "You have already signed in today.", roleId, 16776960);
+        return { game: gameName, roleId: roleId, status: "already", text: "🟡 Already signed in today." };
     }
     else if (code === 10002) {
         Logger.log(`[${gameName}] Token Expired.`);
-        sendDiscordWebhook(`${gameName} Login Failed`, "Account Token is expired. Please update the script.", roleId, 15548997);
+        return { game: gameName, roleId: roleId, status: "error", text: "🔴 Token expired. Please update ACCOUNT_TOKEN." };
     }
     else {
         Logger.log(`[${gameName}] Unknown API Error: ` + msg);
-        sendDiscordWebhook(`${gameName} Attendance Error`, `API Code: ${code}\nMessage: ${msg}`, roleId, 15548997);
+        return { game: gameName, roleId: roleId, status: "error", text: `🔴 Error: ${msg || code}` };
     }
 }
 
 // --- DISCORD WEBHOOK ---
 
-function sendDiscordWebhook(title, description, footer, color) {
+function sendSummaryWebhook(results) {
+    if (results.length === 0) return;
+    const embeds = results.map(r => {
+        const color = r.status === "success" ? 5763719 : r.status === "already" ? 16776960 : 15548997;
+        return {
+            title: `${r.game} Attendance`,
+            description: r.text,
+            color: color,
+            timestamp: new Date().toISOString(),
+            footer: { text: String(r.roleId) }
+        };
+    });
+    sendDiscordWebhook(embeds);
+}
+
+function sendDiscordWebhook(embeds) {
     if (!DISCORD_WEBHOOK_URL || DISCORD_WEBHOOK_URL.trim() === "") return;
+    Logger.log("Sending Discord webhook");
 
     const payload = {
         username: "SKPORT Assistant",
         avatar_url: "https://assets.skport.com/assets/favicon.ico",
-        embeds: [{
-            title: title,
-            description: description,
-            color: color,
-            timestamp: new Date().toISOString(),
-            footer: { text: String(footer) }
-        }]
+        embeds: embeds
     };
-
     const options = {
         method: 'post',
         contentType: 'application/json',
         payload: JSON.stringify(payload),
         muteHttpExceptions: true
     };
-
-    try {
-        UrlFetchApp.fetch(DISCORD_WEBHOOK_URL, options);
-    } catch (e) {
-        Logger.log("Failed to send Discord webhook: " + e.toString());
+    const maxRetries = 3;
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+            const res = UrlFetchApp.fetch(DISCORD_WEBHOOK_URL, options);
+            const code = res.getResponseCode();
+            Logger.log("Discord response: " + code);
+            if (code === 200 || code === 204) return;
+            if (code === 429) {
+                Logger.log(`Discord rate limited. Retry ${attempt}/${maxRetries}`);
+                Utilities.sleep(attempt * 10000);
+                continue;
+            }
+            Logger.log("Discord error: " + res.getContentText());
+            return;
+        } catch (e) {
+            Logger.log("Webhook exception: " + e.toString());
+            Utilities.sleep(attempt * 10000);
+        }
     }
+    Logger.log("Failed to send Discord webhook after retries.");
 }
 
 // --- HELPERS ---
@@ -250,7 +275,8 @@ function getPlayerBinding(cred, signToken) {
 
 function sendAttendance(cred, signToken, config) {
     const timestamp = Math.floor(Date.now() / 1000).toString();
-    const signature = computeSign(config.path, "", timestamp, signToken);
+    const bodyStr = config.body ? JSON.stringify(config.body) : "";
+    const signature = computeSign(config.path, bodyStr, timestamp, signToken);
     const headers = {
         "cred": cred, "platform": CONSTANTS.PLATFORM, "vname": CONSTANTS.VNAME, "timestamp": timestamp,
         "sk-language": "zh_Hant", "sign": signature, "Content-Type": "application/json"
