@@ -13,7 +13,7 @@
 1.  登入 SKPORT：
     - 明日方舟：https://game.skport.com/arknights/sign-in
     - 終末地：https://game.skport.com/endfield/sign-in
-2.  前往 https://web-api.skport.com/cookie_store/account_token ，複製 JSON 中的 `code` 欄位內容。
+2.  前往 https://web-api.skport.com/cookie_store/account_token ，複製 JSON 中的 `data.content` 欄位內容。
     ![](https://github.com/user-attachments/assets/a8fffd7d-cc92-41e5-9bba-21cb17074142)
 ---
 
