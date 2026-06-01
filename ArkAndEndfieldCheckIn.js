@@ -64,16 +64,25 @@ function alreadyRanToday() {
     return false;
 }
 
+
 function main() {
     if (alreadyRanToday()) {
         Logger.log("Already ran today, skipping.");
         return;
     }
-    try {
-        performCheckIn();
-    } catch (e) {
-        Logger.log("CRITICAL ERROR: " + e.toString());
-        sendDiscordWebhook([{ title: "Script Error", description: e.toString(), color: 15548997, timestamp: new Date().toISOString() }]);
+    const maxRetries = 3;
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+            performCheckIn();
+            return;
+        } catch (e) {
+            Logger.log(`Attempt ${attempt}/${maxRetries} failed: ` + e.toString());
+            if (attempt < maxRetries) {
+                Utilities.sleep(attempt * 10000);
+            } else {
+                sendDiscordWebhook([{ title: "Script Error", description: e.toString(), color: 15548997, timestamp: new Date().toISOString() }]);
+            }
+        }
     }
 }
 
@@ -167,7 +176,7 @@ function sendDiscordWebhook(embeds) {
         payload: JSON.stringify(payload),
         muteHttpExceptions: true
     };
-    const maxRetries = 3;
+    const maxRetries = 10;
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
             const res = UrlFetchApp.fetch(DISCORD_WEBHOOK_URL, options);
