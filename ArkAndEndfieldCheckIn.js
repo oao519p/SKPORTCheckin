@@ -177,6 +177,8 @@ function sendDiscordWebhook(embeds) {
         muteHttpExceptions: true
     };
     const maxRetries = 10;
+    const deadlineMs = 60000; // schedule retry trigger if next wait would exceed this
+    const startTime = Date.now();
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
             const res = UrlFetchApp.fetch(DISCORD_WEBHOOK_URL, options);
@@ -184,18 +186,60 @@ function sendDiscordWebhook(embeds) {
             Logger.log("Discord response: " + code);
             if (code === 200 || code === 204) return;
             if (code === 429) {
-                Logger.log(`Discord rate limited. Retry ${attempt}/${maxRetries}`);
-                Utilities.sleep(attempt * 10000);
+                const headers = res.getHeaders();
+                const scope = headers["X-RateLimit-Scope"] || headers["x-ratelimit-scope"] || "unknown";
+                let retryAfterMs = 5000;
+                try {
+                    const body = JSON.parse(res.getContentText());
+                    if (body.retry_after) retryAfterMs = Math.ceil(body.retry_after) + 500;
+                } catch (_) {}
+                Logger.log(`Discord rate limited (scope: ${scope}). retry_after: ${retryAfterMs}ms. Retry ${attempt}/${maxRetries}`);
+                if (Date.now() - startTime + retryAfterMs > deadlineMs) {
+                    Logger.log("Time budget exceeded. Scheduling retryWebhook trigger in 2 minutes.");
+                    scheduleWebhookRetry(embeds);
+                    return;
+                }
+                Utilities.sleep(retryAfterMs);
                 continue;
             }
             Logger.log("Discord error: " + res.getContentText());
             return;
         } catch (e) {
             Logger.log("Webhook exception: " + e.toString());
-            Utilities.sleep(attempt * 10000);
+            Utilities.sleep(5000);
         }
     }
-    Logger.log("Failed to send Discord webhook after retries.");
+    Logger.log("Failed to send Discord webhook after retries. Scheduling retryWebhook trigger.");
+    scheduleWebhookRetry(embeds);
+}
+
+function scheduleWebhookRetry(embeds) {
+    const props = PropertiesService.getScriptProperties();
+    props.setProperty("pendingEmbeds", JSON.stringify(embeds));
+    // delete any existing retryWebhook trigger to avoid duplicates
+    ScriptApp.getProjectTriggers().forEach(t => {
+        if (t.getHandlerFunction() === "retryWebhook") ScriptApp.deleteTrigger(t);
+    });
+    ScriptApp.newTrigger("retryWebhook")
+        .timeBased()
+        .after(2 * 60 * 1000)
+        .create();
+    Logger.log("retryWebhook trigger scheduled.");
+}
+
+function retryWebhook() {
+    // clean up this trigger first
+    ScriptApp.getProjectTriggers().forEach(t => {
+        if (t.getHandlerFunction() === "retryWebhook") ScriptApp.deleteTrigger(t);
+    });
+    const props = PropertiesService.getScriptProperties();
+    const raw = props.getProperty("pendingEmbeds");
+    if (!raw) { Logger.log("retryWebhook: no pending embeds found."); return; }
+    let embeds;
+    try { embeds = JSON.parse(raw); } catch (e) { Logger.log("retryWebhook: failed to parse embeds: " + e); return; }
+    props.deleteProperty("pendingEmbeds");
+    Logger.log("retryWebhook: retrying Discord webhook...");
+    sendDiscordWebhook(embeds);
 }
 
 // --- HELPERS ---
