@@ -1,6 +1,6 @@
 # SKPORT Daily Sign-in Script (Google Apps Script)
 
-[中文版](README_CheckIn.zh-TW.md)
+[中文版](README.zh-TW.md)
 
 This is a **Google Apps Script** that automates the daily sign-in process for **Arknights** and **Arknights: Endfield** (SKPORT/Gryphline). It runs automatically on Google's servers, so you don't need to keep your computer on.
 
@@ -75,9 +75,7 @@ After each run, you will receive **a single message** containing results for all
 
 **Q: The script failed with "Token Expired".** A: The `ACCOUNT_TOKEN` may expire after a few weeks or months, or if you log out of the website manually. Simply repeat **Step 1** to get a new token and update the script variable.
 
-**Q: How do I test if it works right now?** A: In the script editor, select the function **`main`** from the dropdown and click **Run**. Check the logs or your Discord channel for the result.
-
-Note: if the script has already run today, it will skip and log `Already ran today, skipping.` To force a re-run, go to **Project Settings** (gear icon) → **Script Properties**, delete the `lastRun` entry, then run `main` again.
+**Q: How do I test if it works right now?** A: In the script editor, select the function **`main`** from the dropdown and click **Run**. Check the logs or your Discord channel for the result. Note: if the script has already run today, it will skip and log `Already ran today, skipping.` To force a re-run, go to **Project Settings** (gear icon) → **Script Properties**, delete the `lastRun` entry, then run `main` again.
 
 ![](https://github.com/user-attachments/assets/e37893a8-b446-446d-b704-d1da9bb0dbd0) ![](https://github.com/user-attachments/assets/ddd1461c-8f66-4615-8da9-cc4ea555cb8b)
 
@@ -99,12 +97,11 @@ Change `3` to your desired hour (0–23, in 24-hour format). If you are in a dif
 ### Discord notification not received
 
 1. Go to the GAS editor → **Executions** (clock icon on the left sidebar).
-
     ![](https://github.com/user-attachments/assets/4ecc4e30-03b9-47fc-b224-ece4d6c59a33) ![](https://github.com/user-attachments/assets/cb32d123-1bab-412b-b900-9cab6b4865bb)
 2. Find the latest execution (or the day you didn't receive a notification) and expand the log.
 3. Check for `Sending Discord webhook` — if it appears, look for `Discord response:` on the next line:
    - `204` = sent successfully (check Discord channel directly, may be a notification settings issue)
-   - `429` = rate limited (the script will retry automatically; if it keeps happening, increase `const maxRetries` or the `attempt * 10000` delay in `sendDiscordWebhook`)
+   - `429` = rate limited (the script will retry up to 10 times using the `retry_after` delay from Discord's response; if the total wait would exceed 60 seconds, it schedules a `retryWebhook` trigger to resend 2 minutes later — this repeats automatically until the notification is delivered)
    ![](https://github.com/user-attachments/assets/907ce62a-572f-4de4-b105-48886ab78110)
    - Other codes = webhook URL may be invalid or deleted — recreate the webhook and update `DISCORD_WEBHOOK_URL`
 4. If `Sending Discord webhook` does **not** appear, the sign-in itself may have failed — check for `Script Error` or `Unknown API Error` in the log.
@@ -112,7 +109,6 @@ Change `3` to your desired hour (0–23, in 24-hour format). If you are in a dif
 ### Script Error / Address unavailable
 
 This usually means GAS temporarily could not reach the SKPORT server. The script will automatically retry up to 3 times. If all retries fail, you will receive a **Script Error** Discord notification.
-
 ![](https://github.com/user-attachments/assets/66d8189a-f02f-4db7-875c-381970907d28)
 
 To adjust retry behavior, find this line in `main()`:
