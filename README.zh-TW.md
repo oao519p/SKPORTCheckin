@@ -1,6 +1,6 @@
 # SKPORT 每日簽到腳本（Google Apps Script）
 
-[English](README_CheckIn.md)
+[English](README.md)
 
 這是一個 **Google Apps Script**，可自動完成《明日方舟》與《明日方舟：終末地》（SKPORT/Gryphline）的每日簽到。腳本運行在 Google 的伺服器上，不需要保持電腦開機。
 
